@@ -24,17 +24,19 @@
 #include <drm/drm_ioctl.h>
 #include <drm/drm_managed.h>
 #include <drm/drm_modeset_helper_vtables.h>
+#include <drm/drm_print.h>
 #include <drm/drm_probe_helper.h>
 #include <drm/drm_simple_kms_helper.h>
+#include <drm/clients/drm_client_setup.h>
 
 #include "statusLinkProtocol.h"
 #include "panelLinkProtocol.h"
 
 #define DRIVER_NAME		"beada"
 #define DRIVER_DESC		"BeadaPanel USB Media Display"
-#define DRIVER_DATE		"2024"
 #define DRIVER_MAJOR		1
 #define DRIVER_MINOR		0
+#define DRIVER_PATCHLEVEL	1
 
 
 #define MODEL_5		0
@@ -91,13 +93,14 @@ struct beada_device {
 
 #define to_beada(__dev) container_of(__dev, struct beada_device, dev)
 
-void HexDump(unsigned char *buf, int len, unsigned char *addr) {
+static void HexDump(unsigned char *buf, int len, unsigned char *addr) {
+#if 0
 	int i, j, k;
 	char binstr[80];
 
 	for (i = 0; i < len; i++) {
 		if (0 == (i % 16)) {
-			sprintf(binstr, "%08x -", i + (int)addr);
+			sprintf(binstr, "%08lx -", i + (long)addr);
 			sprintf(binstr, "%s %02x", binstr, (unsigned char)buf[i]);
 		}
 		else if (15 == (i % 16)) {
@@ -124,6 +127,9 @@ void HexDump(unsigned char *buf, int len, unsigned char *addr) {
 		}
 		printk(KERN_DEBUG "%s\n", binstr);
 	}
+#else
+		printk(KERN_DEBUG "(hex dump goes here)\n");
+#endif
 }
 
 static int beada_send_tag(struct beada_device *beada, const char* cmd)
@@ -308,22 +314,23 @@ static int beada_misc_request(struct beada_device *beada)
 	return 0;
 }
 
-static int beada_buf_copy(void *dst, const struct dma_buf_map *map, struct drm_framebuffer *fb, struct drm_rect *clip)
+static int beada_buf_copy(void *dst, const struct iosys_map *src, struct drm_framebuffer *fb, struct drm_rect *clip)
 {
 	int ret;
+	struct iosys_map dst_map = IOSYS_MAP_INIT_VADDR(dst);
 
 	ret = drm_gem_fb_begin_cpu_access(fb, DMA_FROM_DEVICE);
 	if (ret)
 		return ret;
 
-	drm_fb_xrgb8888_to_rgb565(dst, map->vaddr, fb, clip, false);
+	drm_fb_xrgb8888_to_rgb565(&dst_map, NULL, src, fb, clip, false);
 
 	drm_gem_fb_end_cpu_access(fb, DMA_FROM_DEVICE);
 
 	return 0;
 }
 
-static void beada_fb_mark_dirty(struct drm_framebuffer *fb, const struct dma_buf_map *map, struct drm_rect *rect)
+static void beada_fb_mark_dirty(struct drm_framebuffer *fb, const struct iosys_map *map, struct drm_rect *rect)
 {
 	struct beada_device *beada = to_beada(fb->dev);
 	int idx, len, height, width, ret;
@@ -462,7 +469,7 @@ static void beada_pipe_enable(struct drm_simple_display_pipe *pipe,
 				 struct drm_crtc_state *crtc_state,
 				 struct drm_plane_state *plane_state)
 {
-	struct beada_device *beada = to_beada(pipe->crtc.dev);
+	//struct beada_device *beada = to_beada(pipe->crtc.dev);
 	struct drm_shadow_plane_state *shadow_plane_state = to_drm_shadow_plane_state(plane_state);
 	struct drm_framebuffer *fb = plane_state->fb;
 	struct drm_rect rect = {
@@ -519,9 +526,9 @@ static const struct drm_driver beada_drm_driver = {
 
 	.name		 = DRIVER_NAME,
 	.desc		 = DRIVER_DESC,
-	.date		 = DRIVER_DATE,
 	.major		 = DRIVER_MAJOR,
 	.minor		 = DRIVER_MINOR,
+	.patchlevel	 = DRIVER_PATCHLEVEL,
 
 	.fops		 = &beada_fops,
 	DRM_GEM_SHMEM_DRIVER_OPS,
@@ -687,7 +694,7 @@ static int beada_usb_probe(struct usb_interface *interface,
 	}
 
 
-	drm_fbdev_generic_setup(dev, 0);
+	drm_client_setup(dev, NULL);
 
 	DRM_DEV_DEBUG(&beada->udev->dev, "--------------beada_usb_probe() exit\n");
 	return ret;
@@ -730,3 +737,4 @@ static struct usb_driver beada_usb_driver = {
 module_usb_driver(beada_usb_driver);
 MODULE_AUTHOR("Hans de Goede <hdegoede@redhat.com>");
 MODULE_LICENSE("GPL");
+MODULE_DESCRIPTION(DRIVER_DESC);
